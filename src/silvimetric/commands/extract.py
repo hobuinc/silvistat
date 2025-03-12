@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 
 
-from .. import Storage, Extents, ExtractConfig
+from .. import Storage, Extents, ExtractConfig, Graph
+from .shatter import run_graph
 
 np_to_gdal_types = {
     np.dtype(np.byte).str: gdal.GDT_Byte,
@@ -65,21 +66,19 @@ def get_metrics(data_in: pd.DataFrame, storage: Storage) -> Union[None, pd.DataF
     :return: Combined dict of attribute and newly derived metric data.
     """
 
-    #TODO should just use the metric calculation methods from shatter
     if data_in is None:
         return None
 
     def expl(x):
         return x.explode()
 
+    # rerun metrics
     attrs = [a.name for a in storage.config.attrs if a.name not in ['X','Y']]
+    exploded = data_in.apply(expl)[attrs].reset_index()
+    metric_data = run_graph(exploded, storage.config.metrics)
 
-    # set index so we can apply to the whole dataset without needing to skip X and Y
-    # then reset in the index because that's what metric.do expects
-    exploded = data_in.set_index(['X','Y']).apply(expl)[attrs].reset_index()
-    metric_data = dask.persist(*[ m.do(exploded) for m in storage.config.metrics ])
-
-    data_out = data_in.set_index(['X','Y']).join([m for m in metric_data])
+    #combine
+    data_out = data_in.join(metric_data)
     return data_out
 
 def handle_overlaps(config: ExtractConfig, storage: Storage, indices: np.ndarray) -> pd.DataFrame:
@@ -136,7 +135,7 @@ def handle_overlaps(config: ExtractConfig, storage: Storage, indices: np.ndarray
         clean_data = data.loc[data.index[~data.index.duplicated(False)]]
 
         storage.config.log.warning('Overlapping data detected. Rerunning metrics over these cells...')
-        new_metrics = get_metrics(redo_data.reset_index(), storage)
+        new_metrics = get_metrics(redo_data, storage)
     return pd.concat([clean_data, new_metrics]).reset_index()
 
 def extract(config: ExtractConfig) -> None:

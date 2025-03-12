@@ -9,13 +9,13 @@ import pandas as pd
 import numpy as np
 
 from silvimetric import (Log, StorageConfig, ShatterConfig, Storage, Data,
-    Bounds, Metric)
+    Bounds, Metric, Filter)
 from silvimetric.resources.metrics.stats import sm_max, sm_min
 from silvimetric.resources.metrics.p_moments import mean
 from silvimetric import __version__ as svversion
 
 @pytest.fixture(scope='function')
-def autzen_storage(tmp_path_factory: pytest.TempPathFactory) -> Generator[StorageConfig, None, None]:
+def autzen_storage(tmp_path_factory: pytest.TempPathFactory, alignment) -> Generator[StorageConfig, None, None]:
     path = tmp_path_factory.mktemp("test_tdb")
     p = os.path.abspath(path)
 
@@ -31,7 +31,7 @@ PROJECTION[\"Lambert_Conformal_Conic_2SP\"],PARAMETER[\"latitude_of_origin\",
 AUTHORITY[\"EPSG\",\"9002\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH],
 AUTHORITY[\"EPSG\",\"2992\"]]"""
     b = Bounds(635579.2,848884.83,639003.73,853536.21)
-    sc = StorageConfig(b, srs, 10, tdb_dir=p)
+    sc = StorageConfig(b, srs, 10, tdb_dir=p, alignment=alignment)
     Storage.create(sc)
     yield sc
 
@@ -67,7 +67,7 @@ def metric_dag_results() -> Generator[pd.DataFrame, None, None]:
     yield df
 
 @pytest.fixture(scope='function')
-def metric_shatter_config(tmp_path_factory, copc_filepath, attrs, bounds,
+def filter_shatter_config(tmp_path_factory, copc_filepath, attrs, bounds,
         date, crs, resolution, alignment) -> Generator[pd.Series, None, None]:
 
     metrics = [copy.deepcopy(mean)]
@@ -75,14 +75,26 @@ def metric_shatter_config(tmp_path_factory, copc_filepath, attrs, bounds,
     p = os.path.abspath(path)
     log = Log('INFO')
 
-    def dummy_fn(df: pd.DataFrame) -> pd.DataFrame:
-        assert isinstance(df, pd.DataFrame)
-        ndf = df[df['NumberOfReturns'] >= 1]
-        assert isinstance(ndf, pd.DataFrame)
+    def dummy_fn(df: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        ndf = df[df['NumberOfReturns'] >= 10.0]
         return ndf
 
-    metrics[0].add_filter(dummy_fn, 'This is a function.')
-    metrics[0].attributes=attrs
+    def m_mean(df, **kwargs):
+        col_name = df.name
+        filtered = kwargs['dummyFilter'][col_name]
+        return np.mean(filtered)
+
+    def m_median(df, **kwargs):
+        col_name = df.name
+        filtered = kwargs['dummyFilter'][col_name]
+        return np.median(filtered)
+
+    #mean metric
+    f = Filter(dummy_fn, 'dummyFilter')
+    metrics = [
+        Metric('mean', np.float32, m_mean, filters=[f]),
+        Metric('median', np.float32, m_median, filters=[f]),
+    ]
 
     """Make output"""
     st_config=StorageConfig(tdb_dir=p,
@@ -119,11 +131,13 @@ def depless_crr():
 
 @pytest.fixture
 def dep_crr():
-    def m_crr_2(data, *args):
-        m, mi, ma = args
-        den = (ma- mi)
+    def m_crr_2(data, **kwargs):
+        mean = kwargs['mean']
+        minimum = kwargs['min']
+        maximum = kwargs['max']
+        den = (maximum - minimum)
         if den == 0:
             return np.nan
-        return (m - mi) / den
+        return (mean - minimum) / den
 
     return Metric('deps_crr', np.float32, m_crr_2, [mean, sm_min, sm_max])

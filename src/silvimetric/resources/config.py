@@ -74,8 +74,8 @@ class StorageConfig(Config):
         for a in [ 'Z', 'NumberOfReturns', 'ReturnNumber', 'Intensity' ]])
     """List of :class:`silvimetric.resources.attribute.Attribute` attributes that
     represent point data, defaults to Z, NumberOfReturns, ReturnNumber, Intensity"""
-    metrics: list[Metric] = field(default_factory=lambda: [ grid_metrics[m]
-                                  for m in grid_metrics.keys() ])
+    metrics: list[Metric] = field(default_factory=lambda: [
+        v for v in grid_metrics.get_grid_metrics().values() ])
     """List of :class:`silvimetric.resources.metrics.grid_metrics` grid_metrics that
     represent derived data, defaults to values in grid_metrics object"""
     version: str = __version__
@@ -106,7 +106,7 @@ class StorageConfig(Config):
                     " projected coordinate system")
 
         self.metric_definitions = { m.name: str(m) for m in
-                self.metrics}
+                self.metrics }
 
     def __eq__(self, other):
 
@@ -212,7 +212,7 @@ class ShatterConfig(Config):
     """Config for Shatter process"""
     filename: str
     """Input filename referencing a PDAL pipeline or point cloud file."""
-    date: Union[datetime, Tuple[datetime, datetime]]
+    date: Union[datetime, Tuple[datetime, datetime]] = field(default=datetime.now())
     """A date or date range representing data collection times."""
     attrs: list[Attribute] = field(default_factory=list)
     """List of attributes to use in shatter. If this is not set it will be

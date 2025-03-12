@@ -9,7 +9,7 @@ from silvimetric import grid_metrics, ExtractConfig, Extents, Log, extract, Stor
 def tif_test(extract_config):
     minx, miny, maxx, maxy = extract_config.bounds.get()
     resolution = extract_config.resolution
-    filenames = [grid_metrics[m.name].entry_name(a.name)
+    filenames = [m.entry_name(a.name)
                     for m in extract_config.metrics
                     for a in extract_config.attrs]
     storage = Storage.from_db(extract_config.tdb_dir)
@@ -39,6 +39,7 @@ def tif_test(extract_config):
         assert raster.RasterYSize == ysize
 
         r = raster.ReadAsArray()
+        # ceil accounts for differences between the area and point alignments
         assert all([ r[y,x] == (ceil(root_maxy/resolution)-y-1)  for y in range(e.y1, e.y2) for x in range(e.x1, e.x2)])
 
 class Test_Extract(object):
